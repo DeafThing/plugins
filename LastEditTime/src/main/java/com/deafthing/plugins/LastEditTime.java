@@ -6,6 +6,7 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
+import java.util.regex.Pattern;
 
 import com.aliucord.Utils;
 import com.aliucord.annotations.AliucordPlugin;
@@ -19,6 +20,7 @@ import com.discord.utilities.view.text.SimpleDraweeSpanTextView;
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage;
 import com.discord.widgets.chat.list.entries.MessageEntry;
 import com.facebook.drawee.span.DraweeSpanStringBuilder;
+import com.lytefast.flexinput.R;
 
 @AliucordPlugin
 @SuppressLint("UseCompatLoadingForDrawables")
@@ -71,19 +73,25 @@ public final class LastEditTime extends Plugin {
     
     private void replaceEditedText(Context context, SpannableStringBuilder builder, String readableTime) {
         String text = builder.toString();
-        String[] editedPatterns = {
-            "(edited)",
-            " (edited)",
-            "(edited) ",
-            " (edited) "
+        String editedString = context.getString(R.h.message_edited);
+        String[] patterns = {
+            "\\(" + Pattern.quote(editedString) + "\\)",
+            "(?<=\\s)\\(" + Pattern.quote(editedString) + "\\)(?=\\s|$)",
+            "(?<=^|\\s)\\(" + Pattern.quote(editedString) + "\\)(?=\\s|$)"
         };
+        Utils.log("LastEditTime - Text: '" + text + "'");
+        Utils.log("LastEditTime - Looking for: '" + editedString + "'");
         
-        for (String pattern : editedPatterns) {
-            int index = text.lastIndexOf(pattern);
-            if (index != -1) {
-                int start = index;
-                int end = index + pattern.length();
-                String customEditText = " (edited: " + readableTime + ")";
+        for (String patternStr : patterns) {
+            java.util.regex.Matcher matcher = Pattern.compile(patternStr).matcher(text);
+            if (matcher.find()) {
+                int start = matcher.start();
+                int end = matcher.end();
+                String customEditText = " (" + editedString + ": " + readableTime + ")";
+                
+                Utils.log("LastEditTime - Found match with pattern: " + patternStr);
+                Utils.log("LastEditTime - Replacing '" + text.substring(start, end) + "' with '" + customEditText + "'");
+                
                 builder.replace(start, end, customEditText);
                 int newStart = start;
                 int newEnd = start + customEditText.length();
@@ -95,9 +103,10 @@ public final class LastEditTime extends Plugin {
                     var grayColor = new ForegroundColorSpan(0xFF888888);
                     builder.setSpan(grayColor, newStart, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
-                
-                break;
+                return;
             }
         }
+        
+        Utils.log("LastEditTime - No match found for any pattern");
     }
 }
