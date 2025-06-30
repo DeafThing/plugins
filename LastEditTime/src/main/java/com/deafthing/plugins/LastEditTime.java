@@ -12,7 +12,6 @@ import com.aliucord.annotations.AliucordPlugin;
 import com.aliucord.entities.Plugin;
 import com.aliucord.patcher.Hook;
 import com.discord.models.message.Message;
-import com.discord.utilities.color.ColorCompat;
 import com.discord.utilities.textprocessing.node.EditedMessageNode;
 import com.discord.utilities.time.ClockFactory;
 import com.discord.utilities.time.TimeUtils;
@@ -20,8 +19,6 @@ import com.discord.utilities.view.text.SimpleDraweeSpanTextView;
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage;
 import com.discord.widgets.chat.list.entries.MessageEntry;
 import com.facebook.drawee.span.DraweeSpanStringBuilder;
-
-import java.lang.reflect.Field;
 
 @AliucordPlugin
 @SuppressLint("UseCompatLoadingForDrawables")
@@ -39,8 +36,6 @@ public final class LastEditTime extends Plugin {
 
     private void patchProcessMessageText() throws Throwable {
         var clock = ClockFactory.get();
-        
-        // Get the private mDraweeStringBuilder field from SimpleDraweeSpanTextView
         var mDraweeStringBuilder = SimpleDraweeSpanTextView.class.getDeclaredField("mDraweeStringBuilder");
         mDraweeStringBuilder.setAccessible(true);
 
@@ -54,8 +49,6 @@ public final class LastEditTime extends Plugin {
                     var message = messageEntry.getMessage();
                     
                     if (message == null) return;
-                    
-                    // Check if message has been edited
                     var editedTimestamp = message.getEditedTimestamp();
                     if (editedTimestamp == null || editedTimestamp.g() <= 0) return;
                     
@@ -64,46 +57,47 @@ public final class LastEditTime extends Plugin {
                     if (builder == null) return;
                     
                     var context = textView.getContext();
-                    
-                    // Get the raw timestamp value
                     var rawTimestamp = editedTimestamp.g();
-                    
-                    // Convert to readable time
-                    var readableTime = TimeUtils.toReadableTimeString(context, rawTimestamp, clock);
-                    
-                    // Create the edit timestamp text
-                    var editText = " (edited: " + readableTime + ")";
-                    
-                    // Add the edit timestamp to the message
-                    addEditTimestamp(context, builder, editText);
-                    
-                    // Update the text view
+                    var readableTime = TimeUtils.toReadableTimeString(context, rawTimestamp, clock).toString();
+                    replaceEditedText(context, builder, readableTime);
                     textView.setDraweeSpanStringBuilder(builder);
                     
                 } catch (Throwable e) {
-                    // Log error but don't crash
                     Utils.log("LastEditTime - Error processing message text: " + e.getMessage());
                 }
             })
         );
     }
     
-    private void addEditTimestamp(Context context, SpannableStringBuilder builder, String text) {
-        int startPos = builder.length();
-        builder.append(text);
-        int endPos = builder.length();
+    private void replaceEditedText(Context context, SpannableStringBuilder builder, String readableTime) {
+        String text = builder.toString();
+        String[] editedPatterns = {
+            "(edited)",
+            " (edited)",
+            "(edited) ",
+            " (edited) "
+        };
         
-        // Make the text smaller (75% of normal size)
-        builder.setSpan(new RelativeSizeSpan(0.75f), startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        
-        // Apply the same color as Discord's native edited text
-        try {
-            var editedColor = EditedMessageNode.Companion.access$getForegroundColorSpan(EditedMessageNode.Companion, context);
-            builder.setSpan(editedColor, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        } catch (Throwable e) {
-            // Fallback to a gray color if we can't get Discord's color
-            var grayColor = new ForegroundColorSpan(0xFF888888);
-            builder.setSpan(grayColor, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        for (String pattern : editedPatterns) {
+            int index = text.lastIndexOf(pattern);
+            if (index != -1) {
+                int start = index;
+                int end = index + pattern.length();
+                String customEditText = " (edited: " + readableTime + ")";
+                builder.replace(start, end, customEditText);
+                int newStart = start;
+                int newEnd = start + customEditText.length();
+                builder.setSpan(new RelativeSizeSpan(1.0f), newStart, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                try {
+                    var editedColor = EditedMessageNode.Companion.access$getForegroundColorSpan(EditedMessageNode.Companion, context);
+                    builder.setSpan(editedColor, newStart, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } catch (Throwable e) {
+                    var grayColor = new ForegroundColorSpan(0xFF888888);
+                    builder.setSpan(grayColor, newStart, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                
+                break;
+            }
         }
     }
 }
